@@ -80,3 +80,68 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+// Allocate one 2097152-byte page of physical memory.
+// Returns a pointer that the kernel can use.
+// Returns 0 if the memory cannot be allocated.
+void *
+kalloc_superpage(void)
+{
+  struct run *pre_init = kmem.freelist;
+  struct run *init = kmem.freelist;
+  struct run *cur = init;
+  int num = 1;
+  acquire(&kmem.lock);
+  while (num < (1<<9))
+  {
+    if (!cur)
+    {
+      return 0; // This is potentially buggy
+    }
+    // The current and the next page is contiguous
+    // And properly aligned
+    if ((uint64)((void *)cur - (void *)cur->next) == 4096 && !(((uint64)init + PGSIZE) & ((1 << 21) - 1)))
+    {
+      num++;
+    }
+    else
+    {
+      num = 1;
+      init = cur->next;
+      pre_init = cur;
+    }
+    cur = cur->next;
+  }
+  pre_init->next = cur->next;
+  release(&kmem.lock);
+
+  if (cur)
+    memset((char *)cur, 5, PGSIZE * (1<<9)); // fill with junk
+  return (void *)cur;
+}
+
+// Free the superpage of physical memory pointed at by pa,
+// which normally should have been returned by a
+// call to kalloc().  (The exception is when
+// initializing the allocator; see kinit above.)
+void kfree_superpage(void *pa)
+{
+  struct run *r;
+
+  if (((uint64)pa % SUPER_PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kfree_superpage");
+
+  // Fill with junk to catch dangling refs.
+  memset(pa, 1, SUPER_PGSIZE);
+
+  r = (struct run *)pa;
+
+  acquire(&kmem.lock);
+  for (int i = 0; i < (1<<9);i++)
+  {
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    r = (struct run *)((uint64)r + PGSIZE);
+  }
+  release(&kmem.lock);
+}

@@ -117,6 +117,49 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
   return &pagetable[PX(0, va)];
 }
 
+// Return the address of the PTE in page table pagetable
+// that corresponds to virtual address va.  If alloc!=0,
+// create any required page-table pages.
+// This function finds a contiguous 2 MB memory area.
+//
+// The risc-v Sv39 scheme has three levels of page-table
+// pages. A page-table page contains 512 64-bit PTEs.
+// A 64-bit virtual address is split into five fields:
+//   39..63 -- must be zero.
+//   30..38 -- 9 bits of level-2 index.
+//   21..29 -- 9 bits of level-1 index.
+//   12..20 -- 9 bits of level-0 index.
+//    0..11 -- 12 bits of byte offset within the page.
+pte_t *
+walk_superpage(pagetable_t pagetable, uint64 va, int alloc)
+{
+  if (va >= MAXVA)
+    panic("walk_superpage");
+
+  for (int level = 2; level > 1; level--)
+  {
+    pte_t *pte = &pagetable[PX(level, va)];
+    if (*pte & PTE_V)
+    {
+      pagetable = (pagetable_t)PTE2PA(*pte);
+#ifdef LAB_PGTBL
+      if (PTE_LEAF(*pte))
+      {
+        return pte;
+      }
+#endif
+    }
+    else
+    {
+      if (!alloc || (pagetable = (pde_t *)kalloc()) == 0)
+        return 0;
+      memset(pagetable, 0, PGSIZE);
+      *pte = PA2PTE(pagetable) | PTE_V;
+    }
+  }
+  return &pagetable[PX(1, va)];
+}
+
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
@@ -187,6 +230,43 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   return 0;
 }
 
+// Create PTEs for virtual addresses starting at va that refer to
+// physical addresses starting at pa.
+// va and size MUST be page-aligned (2MB).
+// This creates a superpage, instead of an ordinary 4096 bytes page.
+// Returns 0 on success, -1 if walk() couldn't
+// allocate a needed page-table page.
+int mappages_superpage(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+  if ((va % SUPER_PGSIZE) != 0)
+    panic("mappages_superpage: va not aligned");
+
+  if ((size % SUPER_PGSIZE) != 0)
+    panic("mappages_superpage: size not aligned");
+
+  if (size == 0)
+    panic("mappages_superpage: size");
+
+  a = va;
+  last = va + size - SUPER_PGSIZE;
+  for (;;)
+  {
+    if ((pte = walk_superpage(pagetable, a, 1)) == 0)
+      return -1;
+    if (*pte & PTE_V)
+      panic("mappages_superpag: remap");
+    *pte = PA2PTE(pa) | perm | PTE_V;
+    if (a == last)
+      break;
+    a += SUPER_PGSIZE;
+    pa += SUPER_PGSIZE;
+  }
+  return 0;
+}
+
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
@@ -210,9 +290,19 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
-    if(do_free){
+    if (do_free)
+    {
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      pte_t *next_pte = walk(pagetable, a + PGSIZE, 0);
+      if (next_pte == pte) // This is a superpage
+      {
+        kfree_superpage((void *)pa);
+        a += sz * ((1 << 9) - 1);
+      }
+      else
+      {
+        kfree((void *)pa);
+      }
     }
     *pte = 0;
   }
@@ -248,20 +338,30 @@ uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
 }
 
 
+#define MIN(x,y) (x > y ? y : x)
+#define MAX(x, y) (x > y ? x : y)
+
+
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
   char *mem;
-  uint64 a;
+  uint64 a = oldsz;
   int sz;
+  
+  uint64 new_superpage_size = SUPER_PGROUNDDOWN(newsz);
+  uint64 old_superpage_size = SUPER_PGROUNDUP(oldsz);
 
   if(newsz < oldsz)
     return oldsz;
 
   oldsz = PGROUNDUP(oldsz);
-  for(a = oldsz; a < newsz; a += sz){
+
+  // Allocate the first few pages as ordinary pages
+  for (a = oldsz; a < newsz && a < old_superpage_size; a += sz)
+  {
     sz = PGSIZE;
     mem = kalloc();
     if(mem == 0){
@@ -277,6 +377,49 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       return 0;
     }
   }
+
+  // Allocate memory in the middle as superpages
+  for (; a < newsz && a < new_superpage_size; a += sz)
+  {
+    sz = SUPER_PGSIZE;
+    mem = kalloc_superpage();
+    if (mem == 0)
+    {
+      uvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+#ifndef LAB_SYSCALL
+    memset(mem, 0, sz);
+#endif
+    if (mappages_superpage(pagetable, a, sz, (uint64)mem, PTE_R | PTE_U | xperm) != 0)
+    {
+      kfree_superpage(mem);
+      uvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+  }
+
+  // Allocate the rest as ordinary pages
+  for (; a < newsz; a += sz)
+  {
+    sz = PGSIZE;
+    mem = kalloc();
+    if (mem == 0)
+    {
+      uvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+#ifndef LAB_SYSCALL
+    memset(mem, 0, sz);
+#endif
+    if (mappages(pagetable, a, sz, (uint64)mem, PTE_R | PTE_U | xperm) != 0)
+    {
+      kfree(mem);
+      uvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+  }
+
   return newsz;
 }
 
@@ -352,12 +495,29 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    pte_t *next_pte = walk(old, i + PGSIZE, 0);
+    if (next_pte == pte) // This is a superpage
+    {
+      if((mem = kalloc_superpage()) == 0)
+        goto err;
+      memmove(mem, (char *)pa, SUPER_PGSIZE);
+      if (mappages_superpage(new, i, SUPER_PGSIZE, (uint64)mem, flags) != 0)
+      {
+        kfree(mem);
+        goto err;
+      }
+      i = i + SUPER_PGSIZE - PGSIZE;
+    }
+    else
+    {
+      if ((mem = kalloc()) == 0)
+        goto err;
+      memmove(mem, (char *)pa, PGSIZE);
+      if (mappages(new, i, PGSIZE, (uint64)mem, flags) != 0)
+      {
+        kfree(mem);
+        goto err;
+      }
     }
   }
   return 0;
