@@ -96,7 +96,7 @@ kalloc_superpage(void)
   {
     if (!cur)
     {
-      return 0; // This is potentially buggy
+      goto bad;
     }
     // The current and the next page is contiguous
     // And properly aligned
@@ -113,6 +113,7 @@ kalloc_superpage(void)
     cur = cur->next;
   }
   pre_init->next = cur->next;
+bad:
   release(&kmem.lock);
 
   if (cur)

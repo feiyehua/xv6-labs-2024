@@ -385,8 +385,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
     mem = kalloc_superpage();
     if (mem == 0)
     {
-      uvmdealloc(pagetable, a, oldsz);
-      return 0;
+      break; // Retry by allocating small pages
     }
 #ifndef LAB_SYSCALL
     memset(mem, 0, sz);
@@ -503,7 +502,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       memmove(mem, (char *)pa, SUPER_PGSIZE);
       if (mappages_superpage(new, i, SUPER_PGSIZE, (uint64)mem, flags) != 0)
       {
-        kfree(mem);
+        kfree_superpage(mem);
         goto err;
       }
       i = i + SUPER_PGSIZE - PGSIZE;
