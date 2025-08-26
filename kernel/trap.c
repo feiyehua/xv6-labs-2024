@@ -67,7 +67,21 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+    // Every timer tick makes which_dev = 2
+    if(which_dev == 2)
+    {
+      // A timer trap
+      p->time++;
+      if (p->interval!=0 && p->time % p->interval ==0)
+      {
+        // Call handler function here, then return to the user space
+        printf("usertrap(): scause %d\n", which_dev);
+        p->trapframe->epc = (uint64) p->handler;
+      }
+    }
+  }
+  else
+  {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
