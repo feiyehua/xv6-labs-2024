@@ -1,7 +1,7 @@
 /*
  * @Author       : FeiYehua
  * @Date         : 2025-08-26 14:47:37
- * @LastEditTime : 2025-08-27 00:50:37
+ * @LastEditTime : 2025-08-27 01:09:39
  * @LastEditors  : FeiYehua
  * @Description  : 
  * @FilePath     : sigalarm.c
@@ -44,5 +44,8 @@ uint64 sys_sigreturn()
 
     // Restore stack pointer to the state prior to calling the signal handler
     p->trapframe->sp += 0x10;
+
+    // Restore the interval
+    p->interval = p->old_interval;
     return 0;
 }

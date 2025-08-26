@@ -72,12 +72,14 @@ usertrap(void)
     {
       // A timer trap
       p->time++;
-      if (p->interval!=0 && p->time % p->interval ==0)
+      if (p->interval != 0 && p->time % p->interval == 0)
       {
         // Call handler function here, then return to the user space
         printf("usertrap(): scause %d\n", which_dev);
         p->trapframe->old_epc = p->trapframe->epc; // Restore to the orignal epc, which is the address of the next instruction
         p->trapframe->epc = (uint64)p->handler;
+        p->old_interval = p->interval;
+        p->interval = 0;
       }
     }
   }

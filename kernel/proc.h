@@ -109,4 +109,5 @@ struct proc {
   uint64 time;                 // Ticks since process started
   uint64 interval;             // The desired interval
   sighandler_t handler;        // The alarm handler
+  uint64 old_interval;         // The previous interval, set by the timer in trap, restored by sigreturn.
 };
