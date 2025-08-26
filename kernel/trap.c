@@ -76,7 +76,8 @@ usertrap(void)
       {
         // Call handler function here, then return to the user space
         printf("usertrap(): scause %d\n", which_dev);
-        p->trapframe->epc = (uint64) p->handler;
+        p->trapframe->old_epc = p->trapframe->epc; // Restore to the orignal epc, which is the address of the next instruction
+        p->trapframe->epc = (uint64)p->handler;
       }
     }
   }
@@ -84,6 +85,7 @@ usertrap(void)
   {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    backtrace();
     setkilled(p);
   }
 

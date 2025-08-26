@@ -1,7 +1,7 @@
 /*
  * @Author       : FeiYehua
  * @Date         : 2025-08-26 14:47:37
- * @LastEditTime : 2025-08-26 15:54:27
+ * @LastEditTime : 2025-08-27 00:50:37
  * @LastEditors  : FeiYehua
  * @Description  : 
  * @FilePath     : sigalarm.c
@@ -34,6 +34,15 @@ uint64 sys_sigreturn()
 {
     printf("sigreturn called\n");
     // We should use this function to restore the original trapframe and restore the PC
-    
+    struct proc *p = myproc();
+    // Restore the program counter in user space to the state prior to calling the signal handler
+    p->trapframe->epc = p->trapframe->old_epc;
+
+    // Restore %ra and %s0
+    copyin(p->pagetable, (char *)&p->trapframe->ra, p->trapframe->sp + 0x8, 8);
+    copyin(p->pagetable, (char *)&p->trapframe->s0, p->trapframe->sp, 8);
+
+    // Restore stack pointer to the state prior to calling the signal handler
+    p->trapframe->sp += 0x10;
     return 0;
 }
