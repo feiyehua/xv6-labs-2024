@@ -79,6 +79,7 @@ struct trapframe {
   /* 272 */ uint64 t5;
   /* 280 */ uint64 t6;
   /* 288 */ uint64 old_epc;
+  /* 296 */ uint64 old_a0;
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };

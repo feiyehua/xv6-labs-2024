@@ -165,7 +165,7 @@ slow_handler()
 void
 dummy_handler()
 {
-  sigalarm(0, 0);
+  sigalarm(0, 0); // This makes $a0 change
   sigreturn();
 }
 
@@ -187,7 +187,7 @@ test3()
   asm volatile("mv %0, a0" : "=r" (a0) );
 
   if(a0 != 0xac)
-    printf("test3 failed: register a0 changed\n");
+    printf("test3 failed: register a0 changed,%lu\n",a0);
   else
     printf("test3 passed\n");
 }

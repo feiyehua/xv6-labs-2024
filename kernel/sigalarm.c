@@ -1,7 +1,7 @@
 /*
  * @Author       : FeiYehua
  * @Date         : 2025-08-26 14:47:37
- * @LastEditTime : 2025-08-27 01:09:39
+ * @LastEditTime : 2025-08-27 01:18:13
  * @LastEditors  : FeiYehua
  * @Description  : 
  * @FilePath     : sigalarm.c
@@ -47,5 +47,8 @@ uint64 sys_sigreturn()
 
     // Restore the interval
     p->interval = p->old_interval;
-    return 0;
+
+    // Restore $a0
+    p->trapframe->a0 = p->trapframe->old_a0;
+    return p->trapframe->a0;
 }

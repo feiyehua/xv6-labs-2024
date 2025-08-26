@@ -80,6 +80,7 @@ usertrap(void)
         p->trapframe->epc = (uint64)p->handler;
         p->old_interval = p->interval;
         p->interval = 0;
+        p->trapframe->old_a0 = p->trapframe->a0;
       }
     }
   }
