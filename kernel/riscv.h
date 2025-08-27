@@ -369,8 +369,7 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_MOVE_COWW2W(flag) (((((flag) & PTE_COW_W) >> 6) | (flag)) & (~PTE_COW_W))
 
 // Get the PA index
-#define PA_INDEX(pa) ((((uint64)(pa)) >> 12) & (~(1 << 31)))
-
+#define PA_INDEX(pa) (((uint64)(pa) & (~(1 << 31))) >> 12)
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 

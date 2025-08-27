@@ -54,7 +54,7 @@ kfree(void *pa)
     panic("kfree");
 
   ref_count[PA_INDEX(pa)]--;
-  if(ref_count[PA_INDEX(pa)]>=1)
+  if (ref_count[PA_INDEX(pa)] >= 1)
   {
     return;
   }
@@ -86,7 +86,7 @@ kalloc(void)
   if(r)
   {
     memset((char *)r, 5, PGSIZE); // fill with junk
-    ref_count[((uint64)r) >> 12]++; // Update the reference count
+    ref_count[PA_INDEX(r)] = 1;   // Update the reference count
   }
     
   return (void*)r;

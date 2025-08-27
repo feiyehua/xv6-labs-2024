@@ -331,6 +331,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // memmove(mem, (char*)pa, PGSIZE);
     *pte = PTE_MOVE_W2COWW(*pte);
     ref_count[PA_INDEX(pa)]++;
+    // printf("%p %d\n", (void*)pa, ref_count[PA_INDEX(pa)]);
     if (mappages(new, i, PGSIZE, (uint64)pa, PTE_MOVE_W2COWW(flags)) != 0)
     {
       // kfree(mem);
@@ -365,11 +366,19 @@ int uvmcow(pagetable_t pagetable, uint64 va)
     panic("uvmcow: page not present");
   pa = PTE2PA(*pte);
   flags = PTE_FLAGS(*pte);
-  ref_count[PA_INDEX(pa)]--;
-  if ((mem = kalloc()) == 0)
-    goto err;
-  memmove(mem, (char *)pa, PGSIZE);
-  *pte =  PA2PTE(mem) | PTE_MOVE_COWW2W(flags); // Remove the previous map to prevent remap
+  // printf("%p %d\n", (void *)pa, ref_count[PA_INDEX(pa)]);
+  if (ref_count[PA_INDEX(pa)] > 1)
+  {
+    if ((mem = kalloc()) == 0)
+      goto err;
+    memmove(mem, (char *)pa, PGSIZE);
+    ref_count[PA_INDEX(pa)]--;
+    *pte = PA2PTE(mem) | PTE_MOVE_COWW2W(flags); // Remove the previous map to prevent remap
+  }
+  else
+  {
+    *pte = PTE_MOVE_COWW2W(*pte);
+  }
   return 0;
 
 err:
