@@ -165,6 +165,7 @@ panic(char *s)
   pr.locking = 0;
   printf("panic: ");
   printf("%s\n", s);
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -175,4 +176,24 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+void **get_s0()
+{
+  void **s0;
+  asm volatile("mv %0, s0" : "=r"(s0));
+  return s0;
+}
+
+void backtrace(void)
+{
+  printf("backtrace:\n");
+  void **s0 = get_s0();
+  while ((uint64)s0 > 114514)
+  {
+    printf("%p\n", *(s0 - 1));
+    s0 = (void **)*(s0 - 2);
+  }
+  printf("\n");
+  return;
 }

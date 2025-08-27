@@ -413,10 +413,35 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     if(va0 >= MAXVA)
       return -1;
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
-      return -1;
     pa0 = PTE2PA(*pte);
+    if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
+      return -1;
+    if ((*pte & PTE_W) == 0)
+    {
+      if (*pte & PTE_COW_W)
+      {
+        uint64 flags = PTE_FLAGS(*pte);
+        // Map a page of writeable memory
+        if (ref_count[PA_INDEX(pa0)] > 1)
+        {
+          void *mem;
+          if ((mem = kalloc()) == 0)
+            return -1;
+          memmove(mem, (char *)pa0, PGSIZE);
+          ref_count[PA_INDEX(pa0)]--;
+          *pte = PA2PTE(mem) | PTE_MOVE_COWW2W(flags); // Remove the previous map to prevent remap
+          pa0 = PTE2PA(*pte);
+        }
+        else
+        {
+          *pte = PTE_MOVE_COWW2W(*pte);
+        }
+      }
+      else
+      {
+        return -1;
+      }
+    }
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
