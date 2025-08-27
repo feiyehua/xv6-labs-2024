@@ -49,8 +49,10 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  uint64 scause = r_scause();
+  if (scause == 8)
+  {
     // system call
 
     if(killed(p))
@@ -65,9 +67,23 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  }
+  else if (scause == 0xf) // A page fault
+  {
+    // Here, we should actually allocate the physical memory and return
+    uint64 va = r_stval();
+    pte_t *pte = walk(p->pagetable, va, 0);
+    uint64 flag = PTE_FLAGS(*pte);
+    // printf("usertrap(): scause%lu, va %p, pid %d\n", scause, (void *)va, p->pid);
+    if ((!(flag & PTE_COW_W) || uvmcow(p->pagetable, va)))
+    {
+      goto bad;
+    }
+  }
+  else if ((which_dev = devintr()) != 0){
     // ok
   } else {
+bad:
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
