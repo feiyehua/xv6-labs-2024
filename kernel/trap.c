@@ -72,10 +72,18 @@ usertrap(void)
   {
     // Here, we should actually allocate the physical memory and return
     uint64 va = r_stval();
+    if (va >= MAXVA)
+    {
+      goto bad;
+    }
     pte_t *pte = walk(p->pagetable, va, 0);
+    if(pte == 0)
+    {
+      goto bad;
+    }
     uint64 flag = PTE_FLAGS(*pte);
-    // printf("usertrap(): scause%lu, va %p, pid %d\n", scause, (void *)va, p->pid);
-    if ((!(flag & PTE_COW_W) || uvmcow(p->pagetable, va)))
+    // printf("usertrap(): scause%lu, va %p, pid %d, pte %lu\n", scause, (void *)va, p->pid, *pte);
+    if (((!(flag & PTE_COW_W) && !(flag & PTE_W)) || !(flag & PTE_U) || uvmcow(p->pagetable, va)))
     {
       goto bad;
     }
