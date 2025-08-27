@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 
 /*
  * the kernel's page table.
@@ -15,7 +16,7 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
-extern int ref_count[1 << 15];
+extern struct ref_count ref_counts[1 << 15];
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -330,8 +331,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     //   goto err;
     // memmove(mem, (char*)pa, PGSIZE);
     *pte = PTE_MOVE_W2COWW(*pte);
-    ref_count[PA_INDEX(pa)]++;
-    // printf("%p %d\n", (void*)pa, ref_count[PA_INDEX(pa)]);
+    acquire(&ref_counts[PA_INDEX(pa)].lock);
+    ref_counts[PA_INDEX(pa)].count++;
+    release(&ref_counts[PA_INDEX(pa)].lock);
     if (mappages(new, i, PGSIZE, (uint64)pa, PTE_MOVE_W2COWW(flags)) != 0)
     {
       // kfree(mem);
@@ -366,23 +368,24 @@ int uvmcow(pagetable_t pagetable, uint64 va)
     panic("uvmcow: page not present");
   pa = PTE2PA(*pte);
   flags = PTE_FLAGS(*pte);
-  // printf("%p %d\n", (void *)pa, ref_count[PA_INDEX(pa)]);
-  if (ref_count[PA_INDEX(pa)] > 1)
+  acquire(&ref_counts[PA_INDEX(pa)].lock);
+  if (ref_counts[PA_INDEX(pa)].count > 1)
   {
     if ((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char *)pa, PGSIZE);
-    ref_count[PA_INDEX(pa)]--;
+    ref_counts[PA_INDEX(pa)].count--;
     *pte = PA2PTE(mem) | PTE_MOVE_COWW2W(flags); // Remove the previous map to prevent remap
   }
   else
   {
     *pte = PTE_MOVE_COWW2W(*pte);
   }
+  release(&ref_counts[PA_INDEX(pa)].lock);
   return 0;
 
 err:
-  uvmunmap(pagetable, i, 1, 1);
+  release(&ref_counts[PA_INDEX(pa)].lock);
   return -1;
 }
 
@@ -422,13 +425,18 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       {
         uint64 flags = PTE_FLAGS(*pte);
         // Map a page of writeable memory
-        if (ref_count[PA_INDEX(pa0)] > 1)
+        acquire(&ref_counts[PA_INDEX(pa0)].lock);
+        uint64 old_pa0 = pa0;
+        if (ref_counts[PA_INDEX(pa0)].count > 1)
         {
           void *mem;
           if ((mem = kalloc()) == 0)
+          {
+            release(&ref_counts[PA_INDEX(pa0)].lock);
             return -1;
+          }
           memmove(mem, (char *)pa0, PGSIZE);
-          ref_count[PA_INDEX(pa0)]--;
+          ref_counts[PA_INDEX(pa0)].count--;
           *pte = PA2PTE(mem) | PTE_MOVE_COWW2W(flags); // Remove the previous map to prevent remap
           pa0 = PTE2PA(*pte);
         }
@@ -436,6 +444,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
         {
           *pte = PTE_MOVE_COWW2W(*pte);
         }
+        release(&ref_counts[PA_INDEX(old_pa0)].lock);
       }
       else
       {

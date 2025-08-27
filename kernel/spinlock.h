@@ -7,3 +7,8 @@ struct spinlock {
   struct cpu *cpu;   // The cpu holding the lock.
 };
 
+struct ref_count
+{
+  struct spinlock lock;
+  int count;
+};
