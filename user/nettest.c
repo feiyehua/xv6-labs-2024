@@ -903,13 +903,14 @@ main(int argc, char *argv[])
     usage();
 
   if(strcmp(argv[1], "txone") == 0){
-    txone();
+    for (int i = 0; i < 100; i++)
+      txone();
   } else if(strcmp(argv[1], "rx") == 0 || strcmp(argv[1], "rxburst") == 0){
     rx(argv[1]);
   } else if(strcmp(argv[1], "rx2") == 0){
     rx2();
   } else if(strcmp(argv[1], "tx") == 0){
-    tx();
+      tx();
   } else if(strcmp(argv[1], "ping0") == 0){
     ping0();
   } else if(strcmp(argv[1], "ping1") == 0){

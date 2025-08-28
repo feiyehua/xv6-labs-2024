@@ -101,8 +101,32 @@ e1000_transmit(char *buf, int len)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after send completes.
   //
+  struct tx_desc *current_ring = (struct tx_desc *)((uint64)regs[E1000_TDT] + (uint64)&tx_ring[0]);
+  if (regs[E1000_TDT] == TX_RING_SIZE)
+  {
+    regs[E1000_TDT] = 0;
+    current_ring = (struct tx_desc *)((uint64)regs[E1000_TDT] + (uint64)&tx_ring[0]);
+  }
+  if (!(current_ring->status & E1000_TXD_STAT_DD))
+  {
+    return -1;
+  }
+  if (current_ring->addr)
+    kfree((void *)current_ring->addr); // Free the memory page allocated by kalloc
+  current_ring->addr = (uint64)buf;
+  current_ring->length = len;
+  current_ring->cso = 0;
+  current_ring->cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
+  current_ring->css = 0;
+  current_ring->status = 0;
+  current_ring->special = 0;
 
-  
+  regs[E1000_TDT] += 1;
+  // regs[E1000_TCTL] = 0;
+  regs[E1000_TCTL] = E1000_TCTL_EN |                 // enable
+                     E1000_TCTL_PSP |                // pad short packets
+                     (0x10 << E1000_TCTL_CT_SHIFT) | // collision stuff
+                     (0x40 << E1000_TCTL_COLD_SHIFT);
   return 0;
 }
 
