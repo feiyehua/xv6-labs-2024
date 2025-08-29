@@ -25,6 +25,23 @@ netinit(void)
   initlock(&netlock, "netlock");
 }
 
+static void *port_buf[1 << 15];
+
+struct packet_info
+{
+  int src;
+  short sport;
+  short len;
+  char *buf;
+};
+
+#define WATING_BUF_SIZE 16
+struct port_info
+{
+  struct packet_info packets[WATING_BUF_SIZE];
+  short head; // Offset of to the earliest recieved UPD packet payload
+  short tail; // Offset of to the next UPD packet payload to be recieved
+};
 
 //
 // bind(int port)
@@ -37,6 +54,15 @@ sys_bind(void)
   //
   // Your code here.
   //
+  int port;
+  argint(0, &port);
+  port_buf[port] = kalloc();
+
+  if (port_buf[port])
+  {
+    memset(port_buf[port], 0, PGSIZE);
+    return 0;
+  }
 
   return -1;
 }
@@ -52,6 +78,11 @@ sys_unbind(void)
   //
   // Optional: Your code here.
   //
+
+  int port;
+  argint(0, &port);
+  kfree(port_buf[port]);
+  port_buf[port] = 0;
 
   return 0;
 }
@@ -71,13 +102,62 @@ sys_unbind(void)
 // dport, *src, and *sport are host byte order.
 // bind(dport) must previously have been called.
 //
+#define MIN(a, b) ((a) > (b) ? (b) : (a))
 uint64
 sys_recv(void)
 {
   //
   // Your code here.
   //
-  return -1;
+  int dport;
+  uint64 src;
+  uint64 sport;
+  uint64 buf;
+  int maxlen;
+
+  argint(0, &dport);
+  argaddr(1, &src);
+  argaddr(2, &sport);
+  argaddr(3, &buf);
+  argint(4, &maxlen);
+
+  if (!port_buf[dport])
+  {
+    return -1;
+  }
+  acquire(&netlock);
+  struct port_info *port = (struct port_info *)port_buf[dport];
+  struct packet_info *packet = &port->packets[port->head];
+
+  while (!(packet->buf))
+  {
+    if (killed(myproc()))
+    {
+      release(&netlock);
+      return -1;
+    }
+    sleep((packet->buf), &netlock);
+    // asm volatile("nop");
+  }
+  uint64 copylen = MIN(maxlen, packet->len);
+  if (copyout(myproc()->pagetable, buf, packet->buf, copylen) 
+   || copyout(myproc()->pagetable, src, (char *)&packet->src, sizeof(int)) 
+   || copyout(myproc()->pagetable, sport, (char *)&packet->sport, sizeof(short)))
+  {
+    packet->buf = 0;
+    packet->len = 0;
+    packet->sport = 0;
+    packet->src = 0;
+    release(&netlock);
+    return -1;
+  }
+  packet->buf = 0;
+  packet->len = 0;
+  packet->sport = 0;
+  packet->src = 0;
+  port->head = (port->head + 1) % 16;
+  release(&netlock);
+  return MIN(maxlen, copylen);
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -191,7 +271,26 @@ ip_rx(char *buf, int len)
   //
   // Your code here.
   //
-  
+
+  struct eth *eth = (struct eth *)buf;
+  struct ip *ip = (struct ip *)(eth + 1);
+  struct udp *udp = (struct udp *)(ip + 1);
+
+  short dport = ntohs(udp->dport);
+  if (!port_buf[dport])
+  {
+    return;
+  }
+  struct port_info *port = (struct port_info *)port_buf[dport];
+  if (port->tail != port->head || port->packets[port->tail].buf == 0)
+  {
+    port->packets[port->tail].buf = buf + sizeof(struct eth) + sizeof(struct ip) + sizeof(struct udp);
+    port->packets[port->tail].src = ntohl(ip->ip_src);
+    port->packets[port->tail].sport = ntohs(udp->sport);
+    port->packets[port->tail].len = ntohs(udp->ulen) - sizeof(struct udp);
+    port->tail = (port->tail + 1) % WATING_BUF_SIZE;
+    wakeup(port->packets[port->tail].buf);
+  }
 }
 
 //

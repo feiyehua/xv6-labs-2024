@@ -903,7 +903,7 @@ main(int argc, char *argv[])
     usage();
 
   if(strcmp(argv[1], "txone") == 0){
-    for (int i = 0; i < 100; i++)
+    // for (int i = 0; i < 100; i++)
       txone();
   } else if(strcmp(argv[1], "rx") == 0 || strcmp(argv[1], "rxburst") == 0){
     rx(argv[1]);
