@@ -139,13 +139,18 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).
   //
-  regs[E1000_RDT] += 1;
-  regs[E1000_RDT] %= RX_RING_SIZE;
-  uint32 index = regs[E1000_RDT];
+  uint32 index = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
   struct rx_desc *current_ring = &rx_ring[index];
-  net_rx((char * )current_ring->addr, current_ring->length);
-  current_ring->addr = (uint64)kalloc();
-  
+  while (current_ring->status & E1000_RXD_STAT_DD)
+  {
+    net_rx((char *)current_ring->addr, current_ring->length);
+    current_ring->addr = (uint64)kalloc();
+    current_ring->status = 0;
+    regs[E1000_RDT] = index;
+    index = (index + 1) % RX_RING_SIZE;
+    current_ring = &rx_ring[index];
+  }
+
 }
 
 void
