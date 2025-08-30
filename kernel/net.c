@@ -254,9 +254,7 @@ sys_send(void)
     return -1;
   }
 
-  e1000_transmit(buf, total);
-
-  return 0;
+  return e1000_transmit(buf, total);
 }
 
 void
