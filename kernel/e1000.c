@@ -102,11 +102,7 @@ e1000_transmit(char *buf, int len)
   // a pointer so that it can be freed after send completes.
   //
   struct tx_desc *current_ring = (uint64)regs[E1000_TDT] + (struct tx_desc *)((uint64)&tx_ring[0]);
-  if (regs[E1000_TDT] == TX_RING_SIZE)
-  {
-    regs[E1000_TDT] = 0;
-    current_ring = &tx_ring[0];
-  }
+  // printf("transmitting, regs[E1000_TDT]%d, tdh,%d%s,%p\n", regs[E1000_TDT], regs[E1000_TDH], buf + 42,current_ring);
   if (!(current_ring->status & E1000_TXD_STAT_DD))
   {
     return -1;
@@ -121,12 +117,7 @@ e1000_transmit(char *buf, int len)
   current_ring->status = 0;
   current_ring->special = 0;
 
-  regs[E1000_TDT] += 1;
-  // regs[E1000_TCTL] = 0;
-  regs[E1000_TCTL] = E1000_TCTL_EN |                 // enable
-                     E1000_TCTL_PSP |                // pad short packets
-                     (0x10 << E1000_TCTL_CT_SHIFT) | // collision stuff
-                     (0x40 << E1000_TCTL_COLD_SHIFT);
+  regs[E1000_TDT] = (regs[E1000_TDT] + 1) % RX_RING_SIZE;
   return 0;
 }
 
@@ -143,6 +134,7 @@ e1000_recv(void)
   struct rx_desc *current_ring = &rx_ring[index];
   while (current_ring->status & E1000_RXD_STAT_DD)
   {
+    // printf("recv! %p %d %d rdt%d rdh%d\n", (char *)current_ring->addr, current_ring->length, index, regs[E1000_RDT], regs[E1000_RDH]);
     net_rx((char *)current_ring->addr, current_ring->length);
     current_ring->addr = (uint64)kalloc();
     current_ring->status = 0;

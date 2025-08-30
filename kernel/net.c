@@ -151,6 +151,7 @@ sys_recv(void)
     release(&netlock);
     return -1;
   }
+  kfree((void*)PGROUNDDOWN(((uint64)(packet->buf))));
   packet->buf = 0;
   packet->len = 0;
   packet->sport = 0;
@@ -248,11 +249,13 @@ sys_send(void)
   udp->ulen = htons(len + sizeof(struct udp));
 
   char *payload = (char *)(udp + 1);
-  if(copyin(p->pagetable, payload, bufaddr, len) < 0){
+  if (copyin(p->pagetable, payload, bufaddr, len) < 0)
+  {
     kfree(buf);
     printf("send: copyin failed\n");
     return -1;
   }
+  // printf("%s payload\n", payload);
 
   return e1000_transmit(buf, total);
 }
@@ -280,15 +283,18 @@ ip_rx(char *buf, int len)
     return;
   }
   struct port_info *port = (struct port_info *)port_buf[dport];
+  acquire(&netlock);
   if (port->tail != port->head || port->packets[port->tail].buf == 0)
   {
     port->packets[port->tail].buf = buf + sizeof(struct eth) + sizeof(struct ip) + sizeof(struct udp);
     port->packets[port->tail].src = ntohl(ip->ip_src);
     port->packets[port->tail].sport = ntohs(udp->sport);
     port->packets[port->tail].len = ntohs(udp->ulen) - sizeof(struct udp);
+    // printf("%s,%d, %p,%d\n", port->packets[port->tail].buf, port->tail, buf, port->packets[port->tail].len);
     port->tail = (port->tail + 1) % WATING_BUF_SIZE;
     wakeup(port->packets[port->tail].buf);
   }
+  release(&netlock);
 }
 
 //
