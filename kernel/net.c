@@ -81,6 +81,14 @@ sys_unbind(void)
 
   int port;
   argint(0, &port);
+  struct port_info *unbind_port = (struct port_info *)port_buf[port];
+  for (int i = 0; i < WATING_BUF_SIZE; i++)
+  {
+    if (unbind_port->packets[i].buf)
+    {
+      kfree((void *)PGROUNDDOWN(((uint64)(unbind_port->packets[i].buf))));
+    }
+  }
   kfree(port_buf[port]);
   port_buf[port] = 0;
 
@@ -144,6 +152,7 @@ sys_recv(void)
    || copyout(myproc()->pagetable, src, (char *)&packet->src, sizeof(int)) 
    || copyout(myproc()->pagetable, sport, (char *)&packet->sport, sizeof(short)))
   {
+    kfree((void *)PGROUNDDOWN(((uint64)(packet->buf))));
     packet->buf = 0;
     packet->len = 0;
     packet->sport = 0;
@@ -278,8 +287,11 @@ ip_rx(char *buf, int len)
   struct udp *udp = (struct udp *)(ip + 1);
 
   short dport = ntohs(udp->dport);
+  // printf("\ndport, %d\n", dport);
   if (!port_buf[dport])
   {
+    // printf("port not bind, free buf page!\n");
+    kfree(buf);
     return;
   }
   struct port_info *port = (struct port_info *)port_buf[dport];
@@ -290,9 +302,17 @@ ip_rx(char *buf, int len)
     port->packets[port->tail].src = ntohl(ip->ip_src);
     port->packets[port->tail].sport = ntohs(udp->sport);
     port->packets[port->tail].len = ntohs(udp->ulen) - sizeof(struct udp);
-    // printf("%s,%d, %p,%d\n", port->packets[port->tail].buf, port->tail, buf, port->packets[port->tail].len);
+    if (dport==2008)
+    {
+      printf("packets from port 2008 received! %d %d\n", port->head, port->tail);
+    }
     port->tail = (port->tail + 1) % WATING_BUF_SIZE;
     wakeup(port->packets[port->tail].buf);
+  }
+  else
+  {
+    // printf("queue full, free buf page!\n");
+    kfree(buf);
   }
   release(&netlock);
 }
